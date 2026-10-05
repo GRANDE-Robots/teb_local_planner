@@ -1,20 +1,25 @@
 teb_local_planner ROS Package
 =============================
 
-The teb_local_planner package implements a plugin to the base_local_planner of the 2D navigation stack. 
+The teb_local_planner package implements a Nav2 local controller plugin.
 The underlying method called Timed Elastic Band locally optimizes the robot's trajectory with respect to trajectory execution time, 
 separation from obstacles and compliance with kinodynamic constraints at runtime.
 
 Refer to http://wiki.ros.org/teb_local_planner for more information and tutorials.
 
-Build status of the *melodic-devel* branch:
-- ROS Buildfarm (Melodic): [![Melodic Status](http://build.ros.org/buildStatus/icon?job=Mdev__teb_local_planner__ubuntu_bionic_amd64)](http://build.ros.org/job/Mdev__teb_local_planner__ubuntu_bionic_amd64/)
+## ROS 2 integration
 
-### Port to ROS2
-This branch is the teb_local_planner package ported to ROS2(Dashing Diademata). Currently, it is currently compatible with [Navigation2(master branch)](https://github.com/ros-planning/navigation2/tree/master)([226f06c](https://github.com/ros-planning/navigation2/commit/226f06ce282c727ca240ce8be0cb4b093e26343b)). You can test teb_local_planner with Navigation2 and TurtleBot3 simulation by launching the following command.
-```
-ros2 launch teb_local_planner teb_tb3_simulation_launch.py
-```
+The `ros2` branch supplies Nav2's TEB controller and the scoped MARINER
+consumer API. The Lyrical adapter receives the SDK's transformed local path
+and separate full final goal. TEB's configured lookahead, costmap bounds,
+ordered rotations, optimizer, and collision checks remain in force. A missing
+or mismatched final target or a skipped ordered rotation rejects the command.
+The installed local path endpoint never substitutes for the final target.
+
+Release compilation has been checked with Ubuntu 26.04 and ROS 2 Lyrical.
+The Jazzy controller interface remains selected by the installed SDK headers;
+this migration has not rerun a Jazzy build. Compilation does not qualify
+trajectory parity, closed-loop behavior, simulation, or physical operation.
 
 ## Citing the Software
 

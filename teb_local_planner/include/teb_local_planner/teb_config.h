@@ -39,12 +39,22 @@
 #ifndef TEB_CONFIG_H_
 #define TEB_CONFIG_H_
 
+#if __has_include(<nav2_ros_common/lifecycle_node.hpp>)
+#include <nav2_ros_common/lifecycle_node.hpp>
+#include <nav2_ros_common/node_utils.hpp>
+#else
 #include <nav2_util/lifecycle_node.hpp>
+#include <nav2_util/node_utils.hpp>
+#endif
+#if __has_include(<nav2_core/path_handler.hpp>)
+#define TEB_NAV2_PATH_HANDLER 1
+#else
+#define TEB_NAV2_PATH_HANDLER 0
+#endif
 #include <memory>
 #include <rclcpp/rclcpp.hpp>
 #include <Eigen/Core>
 #include <Eigen/StdVector>
-#include <nav_2d_utils/parameters.hpp>
 #include "teb_local_planner/robot_footprint_model.h"
 #include <nav2_costmap_2d/footprint.hpp>
 
@@ -53,6 +63,15 @@
 
 namespace teb_local_planner
 {
+#if __has_include(<nav2_ros_common/lifecycle_node.hpp>)
+using Nav2LifecycleNode = nav2::LifecycleNode;
+using nav2::declare_parameter_if_not_declared;
+using Nav2ParentNode = nav2::LifecycleNode;
+#else
+using Nav2LifecycleNode = nav2_util::LifecycleNode;
+using nav2_util::declare_parameter_if_not_declared;
+using Nav2ParentNode = rclcpp_lifecycle::LifecycleNode;
+#endif
 /**
  * @class TebConfig
  * @brief Config class for the teb_local_planner and its components.
@@ -399,13 +418,13 @@ public:
     recovery.divergence_detection_max_chi_squared = 10;
   }
 
-  void declareParameters(const nav2_util::LifecycleNode::SharedPtr, const std::string name);
+  void declareParameters(const Nav2LifecycleNode::SharedPtr, const std::string name);
 
   /**
    * @brief Load parmeters from the ros param server.
    * @param nh const reference to the local rclcpp::Node::SharedPtr
    */
-  void loadRosParamFromNodeHandle(const nav2_util::LifecycleNode::SharedPtr nh, const std::string name);
+  void loadRosParamFromNodeHandle(const Nav2LifecycleNode::SharedPtr nh, const std::string name);
 
   /**
    * @brief Callback executed when a paramter change is detected
@@ -426,7 +445,7 @@ public:
    * @brief Check if some deprecated parameters are found and print warnings
    * @param nh const reference to the local rclcpp::Node::SharedPtr
    */
-  void checkDeprecated(const nav2_util::LifecycleNode::SharedPtr nh, const std::string name) const;
+  void checkDeprecated(const Nav2LifecycleNode::SharedPtr nh, const std::string name) const;
 
   /**
    * @brief Return the internal config mutex

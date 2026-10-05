@@ -38,8 +38,8 @@
  * Author: Christoph Rösmann
  *********************************************************************/
 
-#include <tf2/time.h>
-#include <tf2_ros/buffer_interface.h>
+#include <tf2/time.hpp>
+#include <tf2_ros/buffer_interface.hpp>
 
 #include "teb_local_planner/optimal_planner.h"
 #include "teb_local_planner/g2o_types/edge_station_envelope.h"
@@ -76,7 +76,7 @@ TebOptimalPlanner::TebOptimalPlanner() : cfg_(nullptr), obstacles_(NULL), via_po
 {
 }
 
-TebOptimalPlanner::TebOptimalPlanner(nav2_util::LifecycleNode::SharedPtr node, const TebConfig& cfg, ObstContainer* obstacles, TebVisualizationPtr visual, const ViaPointContainer* via_points)
+TebOptimalPlanner::TebOptimalPlanner(Nav2LifecycleNode::SharedPtr node, const TebConfig& cfg, ObstContainer* obstacles, TebVisualizationPtr visual, const ViaPointContainer* via_points)
 {
   initialize(node, cfg, obstacles, visual, via_points);
 }
@@ -91,7 +91,7 @@ TebOptimalPlanner::~TebOptimalPlanner()
   //g2o::HyperGraphActionLibrary::destroy();
 }
 
-void TebOptimalPlanner::initialize(nav2_util::LifecycleNode::SharedPtr node, const TebConfig& cfg, ObstContainer* obstacles, TebVisualizationPtr visual, const ViaPointContainer* via_points)
+void TebOptimalPlanner::initialize(Nav2LifecycleNode::SharedPtr node, const TebConfig& cfg, ObstContainer* obstacles, TebVisualizationPtr visual, const ViaPointContainer* via_points)
 {
   node_ = node;
   // init optimizer (set solver and block ordering settings)

@@ -55,7 +55,7 @@
 // std
 #include <iterator>
 
-#include <nav2_util/lifecycle_node.hpp>
+
 
 #include <rclcpp_lifecycle/lifecycle_publisher.hpp>
 
@@ -65,7 +65,7 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <std_msgs/msg/color_rgba.hpp>
-#include <tf2/transform_datatypes.h>
+#include <tf2/transform_datatypes.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 
 namespace teb_local_planner
@@ -86,7 +86,7 @@ public:
    * @param nh local rclcpp::Node::SharedPtr
    * @param cfg const reference to the TebConfig class for parameters
    */
-  TebVisualization(const rclcpp_lifecycle::LifecycleNode::SharedPtr & nh, const TebConfig& cfg);
+  TebVisualization(const Nav2LifecycleNode::SharedPtr & nh, const TebConfig& cfg);
   
   /** @name Publish to topics */
   //@{
@@ -214,10 +214,10 @@ public:
    */
   void publishFeedbackMessage(const TebOptimalPlanner& teb_planner, const ObstContainer& obstacles);
   
-  nav2_util::CallbackReturn on_configure();
-  nav2_util::CallbackReturn on_activate();
-  nav2_util::CallbackReturn on_deactivate();
-  nav2_util::CallbackReturn on_cleanup();
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_configure();
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_activate();
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_deactivate();
+  rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_cleanup();
   
   //@}
 
@@ -239,7 +239,7 @@ protected:
    */
   bool printErrorWhenNotInitialized() const;
 
-  nav2_util::LifecycleNode::SharedPtr nh_;
+  Nav2LifecycleNode::SharedPtr nh_;
   
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr global_plan_pub_; //!< Publisher for the global plan
   rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>::SharedPtr local_plan_pub_; //!< Publisher for the local plan

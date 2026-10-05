@@ -61,7 +61,7 @@ void publishPlan(const std::vector<geometry_msgs::msg::PoseStamped>& path,
     pub->publish(gui_path);
 }
 
-TebVisualization::TebVisualization(const rclcpp_lifecycle::LifecycleNode::SharedPtr & nh, const TebConfig& cfg) : nh_(nh), cfg_(&cfg), initialized_(false)
+TebVisualization::TebVisualization(const Nav2LifecycleNode::SharedPtr & nh, const TebConfig& cfg) : nh_(nh), cfg_(&cfg), initialized_(false)
 {
 }
 
@@ -513,7 +513,7 @@ bool TebVisualization::printErrorWhenNotInitialized() const
   return false;
 }
 
-nav2_util::CallbackReturn TebVisualization::on_configure()
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn TebVisualization::on_configure()
 {
   // register topics
   global_plan_pub_ = nh_->create_publisher<nav_msgs::msg::Path>("global_plan", 1);;
@@ -523,10 +523,10 @@ nav2_util::CallbackReturn TebVisualization::on_configure()
   feedback_pub_ = nh_->create_publisher<teb_msgs::msg::FeedbackMsg>("teb_feedback", 1);
 
   initialized_ = true;
-  return nav2_util::CallbackReturn::SUCCESS;
+  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
-nav2_util::CallbackReturn 
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 TebVisualization::on_activate()
 {
   global_plan_pub_->on_activate();
@@ -534,10 +534,10 @@ TebVisualization::on_activate()
   teb_poses_pub_->on_activate();
   teb_marker_pub_->on_activate();
   feedback_pub_->on_activate();
-  return nav2_util::CallbackReturn::SUCCESS;
+  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
-nav2_util::CallbackReturn 
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 TebVisualization::on_deactivate()
 {
   global_plan_pub_->on_deactivate();
@@ -545,10 +545,10 @@ TebVisualization::on_deactivate()
   teb_poses_pub_->on_deactivate();
   teb_marker_pub_->on_deactivate();
   feedback_pub_->on_deactivate();
-  return nav2_util::CallbackReturn::SUCCESS;
+  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
-nav2_util::CallbackReturn 
+rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn
 TebVisualization::on_cleanup()
 {
   global_plan_pub_.reset();
@@ -557,7 +557,7 @@ TebVisualization::on_cleanup()
   teb_marker_pub_.reset();
   feedback_pub_.reset();
 
-  return nav2_util::CallbackReturn::SUCCESS;
+  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 } // namespace teb_local_planner

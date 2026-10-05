@@ -58,12 +58,10 @@
 
 #include <nav2_core/controller_exceptions.hpp>
 #include <nav2_costmap_2d/footprint.hpp>
-#include <nav_2d_utils/tf_help.hpp>
 
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_eigen/tf2_eigen.hpp>
 
-using nav2_util::declare_parameter_if_not_declared;
 
 namespace teb_local_planner
 {
@@ -100,7 +98,7 @@ TebLocalPlannerROS::~TebLocalPlannerROS()
 {
 }
 
-void TebLocalPlannerROS::initialize(nav2_util::LifecycleNode::SharedPtr node)
+void TebLocalPlannerROS::initialize(Nav2LifecycleNode::SharedPtr node)
 {
   // check if the plugin is already initialized
   if(!initialized_)
@@ -197,13 +195,13 @@ void TebLocalPlannerROS::initialize(nav2_util::LifecycleNode::SharedPtr node)
     validateFootprints(cfg_->robot_model->getInscribedRadius(), robot_inscribed_radius_, cfg_->obstacles.min_obstacle_dist);
 
     // setup callback for custom obstacles
-    custom_obst_sub_ = node->create_subscription<costmap_converter_msgs::msg::ObstacleArrayMsg>(
+    custom_obst_sub_ = node->rclcpp_lifecycle::LifecycleNode::create_subscription<costmap_converter_msgs::msg::ObstacleArrayMsg>(
                 "obstacles",
                 rclcpp::SystemDefaultsQoS(),
                 std::bind(&TebLocalPlannerROS::customObstacleCB, this, std::placeholders::_1));
 
     // setup callback for custom via-points
-    via_points_sub_ = node->create_subscription<nav_msgs::msg::Path>(
+    via_points_sub_ = node->rclcpp_lifecycle::LifecycleNode::create_subscription<nav_msgs::msg::Path>(
                 "via_points",
                 rclcpp::SystemDefaultsQoS(),
                 std::bind(&TebLocalPlannerROS::customViaPointsCB, this, std::placeholders::_1));
@@ -232,7 +230,7 @@ void TebLocalPlannerROS::initialize(nav2_util::LifecycleNode::SharedPtr node)
 }
 
 void TebLocalPlannerROS::configure(
-    const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent,
+    const Nav2ParentNode::WeakPtr & parent,
     std::string name,
     std::shared_ptr<tf2_ros::Buffer> tf,
     std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros) {
@@ -337,7 +335,12 @@ geometry_msgs::msg::TwistStamped TebLocalPlannerROS::computeVelocityCommands(
   if (goal_checker) {
     geometry_msgs::msg::Pose pose_tolerance;
     geometry_msgs::msg::Twist velocity_tolerance;
+#if TEB_NAV2_PATH_HANDLER
+    double path_length_tolerance = 0.0;
+    if (goal_checker->getTolerances(pose_tolerance, velocity_tolerance, path_length_tolerance)) {
+#else
     if (goal_checker->getTolerances(pose_tolerance, velocity_tolerance)) {
+#endif
       std::lock_guard<std::mutex> lock(cfg_->configMutex());
       cfg_->goal_tolerance.xy_goal_tolerance = pose_tolerance.position.x;
     }
@@ -349,9 +352,37 @@ geometry_msgs::msg::TwistStamped TebLocalPlannerROS::computeVelocityCommands(
   return output;
 }
 
+#if TEB_NAV2_PATH_HANDLER
+geometry_msgs::msg::TwistStamped TebLocalPlannerROS::computeVelocityCommands(
+    const geometry_msgs::msg::PoseStamped& pose, const geometry_msgs::msg::Twist& velocity,
+    nav2_core::GoalChecker* goal_checker, const nav_msgs::msg::Path& transformed_global_plan,
+    const geometry_msgs::msg::PoseStamped& global_goal)
+{
+  if (goal_checker) {
+    geometry_msgs::msg::Pose pose_tolerance;
+    geometry_msgs::msg::Twist velocity_tolerance;
+#if TEB_NAV2_PATH_HANDLER
+    double path_length_tolerance = 0.0;
+    if (goal_checker->getTolerances(pose_tolerance, velocity_tolerance, path_length_tolerance)) {
+#else
+    if (goal_checker->getTolerances(pose_tolerance, velocity_tolerance)) {
+#endif
+      std::lock_guard<std::mutex> lock(cfg_->configMutex());
+      cfg_->goal_tolerance.xy_goal_tolerance = pose_tolerance.position.x;
+    }
+  }
+  geometry_msgs::msg::TwistStamped output;
+  std::string reason;
+  if (!computeCommand(pose, velocity, output, reason, &transformed_global_plan, &global_goal))
+    throw nav2_core::NoValidControl(reason);
+  return output;
+}
+#endif
+
 bool TebLocalPlannerROS::computeCommand(const geometry_msgs::msg::PoseStamped& pose,
     const geometry_msgs::msg::Twist& velocity, geometry_msgs::msg::TwistStamped& cmd_vel,
-    std::string& message)
+    std::string& message, const nav_msgs::msg::Path* native_plan,
+    const geometry_msgs::msg::PoseStamped* native_goal)
 {
   std::lock_guard<std::mutex> cfg_lock(cfg_->configMutex());
   cmd_vel.twist = geometry_msgs::msg::Twist();
@@ -448,14 +479,90 @@ bool TebLocalPlannerROS::computeCommand(const geometry_msgs::msg::PoseStamped& p
     return false;
   }
 
-  // prune global plan to cut off parts of the past (spatially before the robot)
-  pruneGlobalPlan( robot_pose, global_plan_, cfg_->trajectory.global_plan_prune_distance);
+  // Retain the existing ordered-phase progress on the raw reference. The SDK
+  // local path remains the input to optimization on its native controller API.
+  pruneGlobalPlan(robot_pose, global_plan_, cfg_->trajectory.global_plan_prune_distance);
 
   // Transform global plan to the frame of interest (w.r.t. the local costmap)
   std::vector<geometry_msgs::msg::PoseStamped> transformed_plan;
-  int goal_idx;
+  int goal_idx = 0;
   geometry_msgs::msg::TransformStamped tf_plan_to_global;
-  if (!transformGlobalPlan( global_plan_, robot_pose, *costmap_, cfg_->map_frame, cfg_->trajectory.max_global_plan_lookahead_dist,
+  if (native_plan)
+  {
+    const auto finite_pose = [](const geometry_msgs::msg::PoseStamped& value) {
+      const auto& p = value.pose.position;
+      const auto& q = value.pose.orientation;
+      return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z) &&
+          std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(q.w) &&
+          std::isfinite(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w) &&
+          std::abs(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w - 1.0) <= 1e-6;
+    };
+    if (!native_goal || native_plan->poses.empty() ||
+        native_plan->header.frame_id != cfg_->map_frame ||
+        native_goal->header.frame_id != cfg_->map_frame || !finite_pose(*native_goal)) {
+      message = "native_path_or_final_goal_unavailable";
+      return false;
+    }
+    for (const auto& point : native_plan->poses)
+      if (point.header.frame_id != cfg_->map_frame || !finite_pose(point)) {
+        message = "native_path_frame_or_pose_invalid";
+        return false;
+      }
+    // Lyrical's path handler owns the supplied local path. Retain the full raw
+    // reference only for ordered phases and the separate final-goal predicate.
+    try {
+      tf_plan_to_global = tf_->lookupTransform(cfg_->map_frame,
+          global_plan_.front().header.frame_id, tf2::TimePointZero);
+    } catch (const tf2::TransformException&) {
+      message = "native_reference_transform_unavailable";
+      return false;
+    }
+    geometry_msgs::msg::PoseStamped expected_goal;
+    tf2::doTransform(global_plan_.back(), expected_goal, tf_plan_to_global);
+    if (std::hypot(expected_goal.pose.position.x-native_goal->pose.position.x,
+                   expected_goal.pose.position.y-native_goal->pose.position.y) > 1e-6 ||
+        std::abs(g2o::normalize_theta(tf2::getYaw(expected_goal.pose.orientation)-
+                 tf2::getYaw(native_goal->pose.orientation))) > 1e-6) {
+      message = "native_final_goal_does_not_match_reference";
+      return false;
+    }
+    // Apply TEB's maintained costmap and lookahead bounds to the supplied SDK
+    // path. Path-handler defaults must not silently expand this horizon.
+    if (!transformGlobalPlan(native_plan->poses, robot_pose, *costmap_,
+            cfg_->map_frame, cfg_->trajectory.max_global_plan_lookahead_dist,
+            transformed_plan, nullptr, nullptr)) {
+      message = "native_local_path_transform_failed";
+      return false;
+    }
+    double closest = std::numeric_limits<double>::infinity();
+    for (std::size_t index = 0; index < global_plan_.size(); ++index) {
+      geometry_msgs::msg::PoseStamped point;
+      tf2::doTransform(global_plan_[index], point, tf_plan_to_global);
+      const double distance = std::hypot(point.pose.position.x-transformed_plan.back().pose.position.x,
+                                         point.pose.position.y-transformed_plan.back().pose.position.y);
+      if (distance < closest) { closest = distance; goal_idx = static_cast<int>(index); }
+    }
+    const int phase = command_continuity_.enabled() && !station_envelope_.enabled ?
+        firstIntermediateRotationEnd(global_plan_) : -1;
+    if (phase >= 0 && goal_idx >= phase) {
+      geometry_msgs::msg::PoseStamped endpoint;
+      tf2::doTransform(global_plan_[phase], endpoint, tf_plan_to_global);
+      auto found = std::find_if(transformed_plan.begin(), transformed_plan.end(),
+          [&endpoint](const auto& point) {
+            return std::hypot(point.pose.position.x-endpoint.pose.position.x,
+                               point.pose.position.y-endpoint.pose.position.y) <= 1e-6 &&
+                std::abs(g2o::normalize_theta(tf2::getYaw(point.pose.orientation)-
+                    tf2::getYaw(endpoint.pose.orientation))) <= 1e-6;
+          });
+      if (found == transformed_plan.end()) {
+        message = "native_path_skips_ordered_rotation";
+        return false;
+      }
+      transformed_plan.erase(std::next(found), transformed_plan.end());
+      goal_idx = phase;
+    }
+  }
+  else if (!transformGlobalPlan( global_plan_, robot_pose, *costmap_, cfg_->map_frame, cfg_->trajectory.max_global_plan_lookahead_dist,
                            transformed_plan, &goal_idx, &tf_plan_to_global))
   {
     RCLCPP_WARN(logger_, "Could not transform the global plan to the frame of the controller");
@@ -481,7 +588,8 @@ bool TebLocalPlannerROS::computeCommand(const geometry_msgs::msg::PoseStamped& p
 
   // check if global goal is reached
   geometry_msgs::msg::PoseStamped global_goal;
-  tf2::doTransform(global_plan_.back(), global_goal, tf_plan_to_global);
+  if (native_goal) global_goal = *native_goal;
+  else tf2::doTransform(global_plan_.back(), global_goal, tf_plan_to_global);
   double dx = global_goal.pose.position.x - robot_pose_.x();
   double dy = global_goal.pose.position.y - robot_pose_.y();
   double delta_orient = g2o::normalize_theta( tf2::getYaw(global_goal.pose.orientation) - robot_pose_.theta() );

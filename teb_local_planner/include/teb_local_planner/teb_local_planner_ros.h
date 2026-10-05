@@ -64,16 +64,15 @@
 #include <costmap_converter_msgs/msg/obstacle_msg.hpp>
 
 // transforms
-#include <tf2_ros/transform_listener.h>
-#include <tf2/transform_datatypes.h>
+#include <tf2_ros/transform_listener.hpp>
+#include <tf2/transform_datatypes.hpp>
 
 // costmap
 #include <costmap_converter/costmap_converter_interface.h>
 #include "nav2_costmap_2d/costmap_filters/filter_values.hpp"
 
-#include <nav2_util/lifecycle_node.hpp>
+
 #include <nav2_costmap_2d/costmap_2d_ros.hpp>
-#include <nav_2d_utils/parameters.hpp>
 #include "rcl_interfaces/msg/set_parameters_result.hpp"
 // dynamic reconfigure
 //#include "teb_local_planner/TebLocalPlannerReconfigureConfig.h>
@@ -132,7 +131,7 @@ public:
    * @param costmap_ros Cost map representing occupied and free space
    */
   void configure(
-    const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent,
+    const Nav2ParentNode::WeakPtr & parent,
     std::string name,
     std::shared_ptr<tf2_ros::Buffer> tf,
     std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros) override;
@@ -143,14 +142,21 @@ public:
   /**
     * @brief Initializes the teb plugin
     */
-  void initialize(nav2_util::LifecycleNode::SharedPtr node);
+  void initialize(Nav2LifecycleNode::SharedPtr node);
 
   /**
     * @brief Set the plan that the teb local planner is following
     * @param orig_global_plan The plan to pass to the local planner
     * @return
     */
+#if TEB_NAV2_PATH_HANDLER
+  void newPathReceived(const nav_msgs::msg::Path & orig_global_plan) override {
+    setPlan(orig_global_plan);
+  }
+  void setPlan(const nav_msgs::msg::Path & orig_global_plan);
+#else
   void setPlan(const nav_msgs::msg::Path & orig_global_plan) override;
+#endif
 
   /**
     * @brief Given the current position, orientation, and velocity of the robot, compute velocity commands to send to the base
@@ -162,6 +168,15 @@ public:
     const geometry_msgs::msg::PoseStamped &pose,
     const geometry_msgs::msg::Twist &velocity,
       nav2_core::GoalChecker * goal_checker);
+
+#if TEB_NAV2_PATH_HANDLER
+  geometry_msgs::msg::TwistStamped computeVelocityCommands(
+    const geometry_msgs::msg::PoseStamped & pose,
+    const geometry_msgs::msg::Twist & velocity,
+    nav2_core::GoalChecker * goal_checker,
+    const nav_msgs::msg::Path & transformed_global_plan,
+    const geometry_msgs::msg::PoseStamped & global_goal) override;
+#endif
 
 
   /** @name Public utility functions/methods */
@@ -181,7 +196,7 @@ public:
    * @param nh const reference to the local rclcpp::Node::SharedPtr
    * @return Robot footprint model used for optimization
    */
-  RobotFootprintModelPtr getRobotFootprintFromParamServer(nav2_util::LifecycleNode::SharedPtr node);
+  RobotFootprintModelPtr getRobotFootprintFromParamServer(Nav2LifecycleNode::SharedPtr node);
 
   /**
    * @brief Set the footprint from the given XmlRpcValue.
@@ -377,7 +392,7 @@ protected:
 
 private:
   // Definition of member variables
-  rclcpp_lifecycle::LifecycleNode::WeakPtr nh_;
+  Nav2ParentNode::WeakPtr nh_;
   rclcpp::Logger logger_{rclcpp::get_logger("TEBLocalPlanner")};
   rclcpp::Clock::SharedPtr clock_;
   rclcpp::Node::SharedPtr intra_proc_node_;
@@ -403,7 +418,9 @@ private:
   bool isCommandArcFeasible(const geometry_msgs::msg::Twist& command, SweptFootprint& collision) const;
   bool computeCommand(const geometry_msgs::msg::PoseStamped& pose,
       const geometry_msgs::msg::Twist& velocity, geometry_msgs::msg::TwistStamped& output,
-      std::string& reason);
+      std::string& reason,
+      const nav_msgs::msg::Path* native_plan = nullptr,
+      const geometry_msgs::msg::PoseStamped* native_goal = nullptr);
   bool persistent_goal_ = false, goal_reached_ = false;
   mutable std::mutex terminal_observation_mutex_;
   TerminalObservation terminal_observation_;
@@ -451,4 +468,3 @@ public:
 }; // end namespace teb_local_planner
 
 #endif // TEB_LOCAL_PLANNER_ROS_H_
-
