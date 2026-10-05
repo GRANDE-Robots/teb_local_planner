@@ -4,9 +4,9 @@ project(teb_local_planner)
 # Set to Release in order to speed up the program significantly
 set(CMAKE_BUILD_TYPE Release) #None, Debug, Release, RelWithDebInfo, MinSizeRel
 
-# Default to C++14
+# Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 14)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
 
 #if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -16,7 +16,8 @@ endif()
 ## Find catkin macros and libraries
 find_package(ament_cmake REQUIRED)
 find_package(costmap_converter REQUIRED)
-find_package(dwb_critics REQUIRED)
+find_package(costmap_converter_msgs REQUIRED)
+find_library(NLOPT_LIBRARY nlopt REQUIRED)
 find_package(nav_2d_utils REQUIRED)
 find_package(nav2_core REQUIRED)
 find_package(nav2_costmap_2d REQUIRED)
@@ -41,23 +42,15 @@ message(STATUS "System: ${CMAKE_SYSTEM}")
 ## System dependencies are found with CMake's conventions
 SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake_modules)
 message(STATUS "${CMAKE_MODULE_PATH}")
-find_package(SUITESPARSE REQUIRED)
+find_path(SUITESPARSE_INCLUDE_DIRS cholmod.h PATH_SUFFIXES suitesparse REQUIRED)
+find_library(CHOLMOD_LIBRARY cholmod REQUIRED)
+find_library(CXSPARSE_LIBRARY cxsparse REQUIRED)
+set(SUITESPARSE_LIBRARIES ${CHOLMOD_LIBRARY} ${CXSPARSE_LIBRARY})
 find_package(G2O REQUIRED)
-find_package(Boost REQUIRED)
+find_package(Boost REQUIRED COMPONENTS thread system)
+find_package(Eigen3 REQUIRED NO_MODULE)
 
-# Eigen3 FindScript Backward compatibility (ubuntu saucy)
-# Since FindEigen.cmake is deprecated starting from jade.
-if (EXISTS "FindEigen3.cmake")
-  find_package(Eigen3 REQUIRED)
-  set(Eigen_INCLUDE_DIRS ${Eigen3_INCLUDE_DIRS})
-elseif (EXISTS "FindEigen.cmake")
-  find_package(Eigen REQUIRED)
-elseif (EXISTS "FindEigen.cmake")
-  message(WARNING "No findEigen cmake script found. You must provde one of them,
-  e.g. by adding it to ${PROJECT_SOURCE_DIR}/cmake_modules.")
-endif (EXISTS "FindEigen3.cmake")
-
-set(EXTERNAL_INCLUDE_DIRS ${Eigen_INCLUDE_DIRS} ${SUITESPARSE_INCLUDE_DIRS} ${G2O_INCLUDE_DIR})
+set(EXTERNAL_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS} ${SUITESPARSE_INCLUDE_DIRS} ${G2O_INCLUDE_DIR})
 set(EXTERNAL_LIBS ${Boost_LIBRARIES} ${SUITESPARSE_LIBRARIES} ${G2O_LIBRARIES})
 
 ###########
@@ -86,7 +79,7 @@ add_library(teb_local_planner SHARED
 
 set(ament_dependencies
     costmap_converter
-    dwb_critics
+    costmap_converter_msgs
     nav_2d_utils
     nav2_core
     nav2_costmap_2d
@@ -111,6 +104,8 @@ ament_target_dependencies(teb_local_planner
 )
 target_link_libraries(teb_local_planner
    ${EXTERNAL_LIBS}
+   ${NLOPT_LIBRARY}
+   Eigen3::Eigen
 )
 
 target_compile_definitions(teb_local_planner PUBLIC "PLUGINLIB__DISABLE_BOOST_FUNCTIONS")
@@ -135,8 +130,6 @@ install(FILES
   teb_local_planner_plugin.xml
   DESTINATION share
   )
-
-install(PROGRAMS scripts/cmd_vel_to_ackermann_drive.py DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY params DESTINATION share/${PROJECT_NAME})
 

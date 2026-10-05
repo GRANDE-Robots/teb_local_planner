@@ -3,12 +3,11 @@ controller_server:
     odom_topic: /odom
     use_sim_time: True
     controller_frequency: 5.0
-    controller_plugin_types: ["teb_local_planner::TebLocalPlannerROS"]
     controller_plugins: ["FollowPath"]
     FollowPath:
       plugin: teb_local_planner::TebLocalPlannerROS
 
-      teb_autosize: 1.0
+      teb_autosize: true
       dt_ref: 0.3
       dt_hysteresis: 0.1
       max_samples: 500
@@ -50,6 +49,11 @@ controller_server:
       costmap_converter_plugin: "costmap_converter::CostmapToPolygonsDBSMCCH"
       costmap_converter_spin_thread: True
       costmap_converter_rate: 5
+      costmap_converter:
+        cluster_max_distance: 0.4
+        cluster_min_pts: 2
+        cluster_max_pts: 30
+        convex_hull_min_pt_separation: 0.1
 
       # Optimization
           

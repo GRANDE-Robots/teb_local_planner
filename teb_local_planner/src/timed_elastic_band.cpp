@@ -43,6 +43,9 @@ namespace teb_local_planner
 
 namespace
 {
+  geometry_msgs::msg::Quaternion yawQuaternion(double yaw) {
+    tf2::Quaternion q; q.setRPY(0,0,yaw); return tf2::toMsg(q);
+  }
   /**
    * estimate the time to move from start to end.
    * Assumes constant velocity for the motion.
@@ -59,7 +62,7 @@ namespace
       double rot_dist = std::abs(g2o::normalize_theta(end.theta() - start.theta()));
       dt_constant_motion = std::max(dt_constant_motion, rot_dist / max_vel_theta);
     }
-    return dt_constant_motion;
+    return dt_constant_motion > 0.0 ? dt_constant_motion : 0.1;
   }
 } // namespace
 
@@ -229,7 +232,8 @@ void TimedElasticBand::setTimeDiffVertexFixed(int index, bool status)
 
 void TimedElasticBand::autoResize(double dt_ref, double dt_hysteresis, int min_samples, int max_samples, bool fast_mode)
 {
-  assert(sizeTimeDiffs() == 0 || sizeTimeDiffs() + 1 == sizePoses());
+  TEB_ASSERT_MSG(sizeTimeDiffs() == 0 || sizeTimeDiffs() + 1 == sizePoses(),
+      "TEB pose/time sequence is inconsistent");
   /// iterate through all TEB states and add/remove states!
   bool modified = true;
 
@@ -241,15 +245,27 @@ void TimedElasticBand::autoResize(double dt_ref, double dt_hysteresis, int min_s
     {
       if(TimeDiff(i) > dt_ref + dt_hysteresis && sizeTimeDiffs()<max_samples)
       {
-        //RCLCPP_DEBUG(rclcpp::get_logger("teb_local_planner"), "teb_local_planner: autoResize() inserting new bandpoint i=%u, #TimeDiffs=%lu",i,sizeTimeDiffs());
+          // Force the planner to have equal timediffs between poses (dt_ref +/- dt_hyteresis).
+          // (new behaviour)
+          if (TimeDiff(i) > 2*dt_ref)
+          {
+              double newtime = 0.5*TimeDiff(i);
 
-        double newtime = 0.5*TimeDiff(i);
+              TimeDiff(i) = newtime;
+              insertPose(i+1, PoseSE2::average(Pose(i),Pose(i+1)) );
+              insertTimeDiff(i+1,newtime);
 
-        TimeDiff(i) = newtime;
-        insertPose(i+1, PoseSE2::average(Pose(i),Pose(i+1)) );
-        insertTimeDiff(i+1,newtime);
-
-        modified = true;
+              i--; // check the updated pose diff again
+              modified = true;
+          }
+          else
+          {
+              if (i < sizeTimeDiffs() - 1)
+              {
+                  timediffs().at(i+1)->dt()+= timediffs().at(i)->dt() - dt_ref;
+              }
+              timediffs().at(i)->dt() = dt_ref;
+          }
       }
       else if(TimeDiff(i) < dt_ref - dt_hysteresis && sizeTimeDiffs()>min_samples) // only remove samples if size is larger than min_samples.
       {
@@ -260,6 +276,7 @@ void TimedElasticBand::autoResize(double dt_ref, double dt_hysteresis, int min_s
           TimeDiff(i+1) = TimeDiff(i+1) + TimeDiff(i);
           deleteTimeDiff(i);
           deletePose(i+1);
+          i--; // check the updated pose diff again
         }
         else
         { // last motion should be adjusted, shift time to the interval before
@@ -337,7 +354,7 @@ bool TimedElasticBand::initTrajectoryToGoal(const PoseSE2& start, const PoseSE2&
       double no_steps_d = dist_to_goal/std::abs(diststep); // ignore negative values
       unsigned int no_steps = (unsigned int) std::floor(no_steps_d);
 
-      if (max_vel_x > 0) timestep = diststep / max_vel_x;
+      if (max_vel_x > 0) timestep = std::abs(diststep) / max_vel_x;
 
       for (unsigned int i=1; i<=no_steps; i++) // start with 1! starting point had index 0
       {
@@ -351,41 +368,104 @@ bool TimedElasticBand::initTrajectoryToGoal(const PoseSE2& start, const PoseSE2&
     // if number of samples is not larger than min_samples, insert manually
     if ( sizePoses() < min_samples-1 )
     {
-      RCLCPP_DEBUG(rclcpp::get_logger("teb_local_planner"),
-                   "initTEBtoGoal(): number of generated samples is less than specified by min_samples. Forcing the insertion of more samples...");
+      RCLCPP_DEBUG(rclcpp::get_logger("teb_local_planner"), "initTEBtoGoal(): number of generated samples is less than specified by min_samples. Forcing the insertion of more samples...");
       while (sizePoses() < min_samples-1) // subtract goal point that will be added later
       {
         // simple strategy: interpolate between the current pose and the goal
         PoseSE2 intermediate_pose = PoseSE2::average(BackPose(), goal);
-        if (max_vel_x > 0) timestep = (intermediate_pose.position()-BackPose().position()).norm()/max_vel_x;
+        timestep = estimateDeltaT(BackPose(), intermediate_pose, max_vel_x, 0.0);
         addPoseAndTimeDiff( intermediate_pose, timestep ); // let the optimier correct the timestep (TODO: better initialization
       }
     }
 
     // add goal
-    if (max_vel_x > 0) timestep = (goal.position()-BackPose().position()).norm()/max_vel_x;
+    timestep = estimateDeltaT(BackPose(), goal, max_vel_x, 0.0);
     addPoseAndTimeDiff(goal,timestep); // add goal point
     setPoseVertexFixed(sizePoses()-1,true); // GoalConf is a fixed constraint during optimization
   }
   else // size!=0
   {
-    RCLCPP_WARN(rclcpp::get_logger("teb_local_planner"),
-                 "Cannot init TEB between given configuration and goal, because TEB vectors are not empty or TEB is already initialized (call this function before adding states yourself)!");
-    RCLCPP_WARN(rclcpp::get_logger("teb_local_planner"),
-                 "Number of TEB configurations: %d, Number of TEB timediffs: %d",(unsigned int) sizePoses(),(unsigned int) sizeTimeDiffs());
+    RCLCPP_WARN(rclcpp::get_logger("teb_local_planner"), "Cannot init TEB between given configuration and goal, because TEB vectors are not empty or TEB is already initialized (call this function before adding states yourself)!");
+    RCLCPP_WARN(rclcpp::get_logger("teb_local_planner"), "Number of TEB configurations: %d, Number of TEB timediffs: %d",(unsigned int) sizePoses(),(unsigned int) sizeTimeDiffs());
     return false;
   }
   return true;
 }
 
 
-bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::msg::PoseStamped>& plan, double max_vel_x, double max_vel_theta, bool estimate_orient, int min_samples, bool guess_backwards_motion)
+bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::msg::PoseStamped>& plan, double max_vel_x, double max_vel_theta, bool estimate_orient, int min_samples, bool guess_backwards_motion, bool pivot_seed, boost::optional<double> terminal_yaw)
 {
+  if (pivot_seed && !isInit() && plan.size() >= 2)
+  {
+    // A zero-turning-radius marine platform has one minimal, always
+    // executable primitive sequence: pivot, surge, pivot.  Seeding pairs of
+    // tangent arcs can add a full turn and its inverse while reaching the
+    // same SE(2) endpoint, which needlessly enlarges the swept hull.
+    constexpr double coincident_position = 1e-6;
+    std::vector<geometry_msgs::msg::PoseStamped> guide(1, plan.front());
+    for (std::size_t i = 1; i + 1 < plan.size(); ++i) {
+      const Eigen::Vector2d a = PoseSE2(plan[i].pose).position() -
+                                PoseSE2(guide.back().pose).position();
+      const Eigen::Vector2d b = PoseSE2(plan[i+1].pose).position() -
+                                PoseSE2(plan[i].pose).position();
+      if (a.norm() > coincident_position && b.norm() > coincident_position &&
+          a.dot(b) > 0 &&
+          std::abs(a.x()*b.y()-a.y()*b.x()) <= 1e-8*a.norm()*b.norm())
+        continue;
+      guide.push_back(plan[i]);
+    }
+    guide.push_back(plan.back());
+
+    std::vector<geometry_msgs::msg::PoseStamped> seed(1, guide.front());
+    double seed_yaw = tf2::getYaw(seed.front().pose.orientation);
+    const auto appendTurnTo = [&](double target_yaw, bool terminal = false) {
+      const geometry_msgs::msg::PoseStamped from = seed.back();
+      const double yaw = tf2::getYaw(from.pose.orientation);
+      const double turn = terminal && terminal_yaw
+          ? *terminal_yaw-seed_yaw : g2o::normalize_theta(target_yaw-yaw);
+      if (std::abs(turn) <= 1e-9) return;
+      const int count = std::max(1, int(std::ceil(std::abs(turn)/(M_PI/2))));
+      for (int j=1; j<=count; ++j) {
+        geometry_msgs::msg::PoseStamped point = from;
+        point.pose.orientation =
+            yawQuaternion(yaw+turn*double(j)/count);
+        seed.push_back(point);
+      }
+      seed_yaw += turn;
+    };
+
+    for (std::size_t i=1; i<guide.size(); ++i) {
+      const PoseSE2 from(seed.back().pose), next(guide[i].pose);
+      const Eigen::Vector2d delta = next.position()-from.position();
+      if (delta.norm() > coincident_position) {
+        const double forward_heading = std::atan2(delta.y(),delta.x());
+        const bool reverse = guess_backwards_motion &&
+            delta.dot(from.orientationUnitVec()) < 0;
+        const double travel_heading = g2o::normalize_theta(
+            forward_heading+(reverse ? M_PI : 0));
+        appendTurnTo(travel_heading);
+        geometry_msgs::msg::PoseStamped translated = guide[i];
+        translated.pose.orientation =
+            yawQuaternion(travel_heading);
+        seed.push_back(translated);
+      }
+      // GlobalPlanner headings at translated interior samples are path
+      // tangents, not mandatory turns. Following each one would flip a
+      // reverse segment back to forward at every path sample. Preserve only
+      // an explicit in-place turn or the declared terminal heading.
+      if (i + 1 == guide.size() || delta.norm() <= coincident_position)
+        appendTurnTo(next.theta(), i + 1 == guide.size());
+    }
+    return initTrajectoryToGoal(seed, max_vel_x, max_vel_theta, false,
+                                min_samples, guess_backwards_motion, false);
+  }
 
   if (!isInit())
   {
     PoseSE2 start(plan.front().pose);
     PoseSE2 goal(plan.back().pose);
+    goal.theta() = start.theta() +
+        g2o::normalize_theta(goal.theta() - start.theta());
 
     addPose(start); // add starting point with given orientation
     setPoseVertexFixed(0,true); // StartConf is a fixed constraint during optimization
@@ -419,8 +499,7 @@ bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::msg
     // if number of samples is not larger than min_samples, insert manually
     if ( sizePoses() < min_samples-1 )
     {
-      RCLCPP_DEBUG(rclcpp::get_logger("teb_local_planner"),
-                   "initTEBtoGoal(): number of generated samples is less than specified by min_samples. Forcing the insertion of more samples...");
+      RCLCPP_DEBUG(rclcpp::get_logger("teb_local_planner"), "initTEBtoGoal(): number of generated samples is less than specified by min_samples. Forcing the insertion of more samples...");
       while (sizePoses() < min_samples-1) // subtract goal point that will be added later
       {
         // simple strategy: interpolate between the current pose and the goal
@@ -437,10 +516,8 @@ bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::msg
   }
   else // size!=0
   {
-    RCLCPP_WARN(rclcpp::get_logger("teb_local_planner"),
-                 "Cannot init TEB between given configuration and goal, because TEB vectors are not empty or TEB is already initialized (call this function before adding states yourself)!");
-    RCLCPP_WARN(rclcpp::get_logger("teb_local_planner"),
-                 "Number of TEB configurations: %d, Number of TEB timediffs: %d", sizePoses(), sizeTimeDiffs());
+    RCLCPP_WARN(rclcpp::get_logger("teb_local_planner"), "Cannot init TEB between given configuration and goal, because TEB vectors are not empty or TEB is already initialized (call this function before adding states yourself)!");
+    RCLCPP_WARN(rclcpp::get_logger("teb_local_planner"), "Number of TEB configurations: %d, Number of TEB timediffs: %d", sizePoses(), sizeTimeDiffs());
     return false;
   }
 
@@ -548,28 +625,27 @@ int TimedElasticBand::findClosestTrajectoryPose(const Obstacle& obstacle, double
 }
 
 
-void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_start, boost::optional<const PoseSE2&> new_goal, int min_samples)
+void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_start, boost::optional<const PoseSE2&> new_goal, int min_samples, double max_vel_x, double max_vel_theta)
 {
   // first and simple approach: change only start confs (and virtual start conf for inital velocity)
   // TEST if optimizer can handle this "hard" placement
 
   if (new_start && sizePoses()>0)
   {
-    // find nearest state (using l2-norm) in order to prune the trajectory
-    // (remove already passed states)
-    double dist_cache = (new_start->position()- Pose(0).position()).norm();
-    double dist;
-    int lookahead = std::min<int>( sizePoses()-min_samples, 10); // satisfy min_samples, otherwise max 10 samples
-
-    int nearest_idx = 0;
-    for (int i = 1; i<=lookahead; ++i)
-    {
-      dist = (new_start->position()- Pose(i).position()).norm();
-      if (dist<dist_cache)
-      {
-        dist_cache = dist;
-        nearest_idx = i;
-      }
+    // Progress includes heading: coincident rotation knots cannot be ordered
+    // using position alone. Existing speed limits express both errors in seconds.
+    const bool differential=max_vel_x>0 && max_vel_theta>0;
+    const auto distance = [&](int i) {
+      const double position=(new_start->position()-Pose(i).position()).norm();
+      return differential ? std::hypot(position/max_vel_x,
+          g2o::normalize_theta(new_start->theta()-Pose(i).theta())/max_vel_theta) : position;
+    };
+    double dist_cache=distance(0);
+    const int lookahead=std::min<int>(sizePoses()-(differential?2:min_samples),10);
+    int nearest_idx=0;
+    for(int i=1;i<=lookahead;++i) {
+      const double dist=distance(i);
+      if(dist<=dist_cache) {dist_cache=dist;nearest_idx=i;}
       else break;
     }
 
@@ -579,7 +655,7 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
       // nearest_idx is equal to the number of samples to be removed (since it counts from 0 ;-) )
       // WARNING delete starting at pose 1, and overwrite the original pose(0) with new_start, since Pose(0) is fixed during optimization!
       deletePoses(1, nearest_idx);  // delete first states such that the closest state is the new first one
-      deleteTimeDiffs(1, nearest_idx); // delete corresponding time differences
+      deleteTimeDiffs(0, nearest_idx); // retain the duration of the surviving segment
     }
 
     // update start

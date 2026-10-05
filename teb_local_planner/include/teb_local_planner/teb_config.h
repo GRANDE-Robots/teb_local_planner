@@ -60,8 +60,11 @@ namespace teb_local_planner
 class TebConfig
 {
 public:
+  bool useExactArcLength() const {
+    return trajectory.exact_arc_length || (robot.max_vel_y == 0 && robot.min_turning_radius == 0);
+  }
   using UniquePtr = std::unique_ptr<TebConfig>;
-  
+
   std::string odom_topic; //!< Topic name of the odometry message, provided by the robot driver or simulator
   std::string map_frame; //!< Global planning frame
   std::string node_name; //!< node name used for parameter event callback
@@ -76,7 +79,8 @@ public:
   //! Trajectory related parameters
   struct Trajectory
   {
-    double teb_autosize; //!< Enable automatic resizing of the trajectory w.r.t to the temporal resolution (recommended)
+    int prevent_look_ahead_poses_near_goal = 0;
+    bool teb_autosize; //!< Enable automatic resizing of the trajectory w.r.t to the temporal resolution (recommended)
     double dt_ref; //!< Desired temporal resolution of the trajectory (should be in the magniture of the underlying control rate)
     double dt_hysteresis; //!< Hysteresis for automatic resizing depending on the current temporal resolution (dt): usually 10% of dt_ref
     int min_samples; //!< Minimum number of samples (should be always greater than 2)
@@ -100,6 +104,8 @@ public:
   //! Robot related parameters
   struct Robot
   {
+    double max_vel_trans = 0.0;
+    double base_max_vel_trans = 0.0;
     double base_max_vel_x; //!< Maximum translational velocity of the robot before speed limit is applied
     double base_max_vel_x_backwards; //!< Maximum translational velocity of the robot for driving backwards before speed limit is applied
     double base_max_vel_y; //!< Maximum strafing velocity of the robot (should be zero for non-holonomic robots!) before speed limit is applied
@@ -122,6 +128,10 @@ public:
   //! Goal tolerance related parameters
   struct GoalTolerance
   {
+    bool complete_global_plan = true;
+    double theta_stopped_vel = 0.1;
+    double trans_stopped_vel = 0.1;
+    double yaw_goal_tolerance = 0.2;
     double xy_goal_tolerance; //!< Allowed final euclidean distance to the goal position
     bool free_goal_vel; //!< Allow the robot's velocity to be nonzero (usally max_vel) for planning purposes
   } goal_tolerance; //!< Goal tolerance related parameters
@@ -272,7 +282,7 @@ public:
     trajectory.publish_feedback = false;
     trajectory.min_resolution_collision_check_angular = M_PI;
     trajectory.control_look_ahead_poses = 1;
-    
+
     // Robot
 
     robot.max_vel_x = 0.4;
@@ -280,9 +290,9 @@ public:
     robot.max_vel_y = 0.0;
     robot.max_vel_theta = 0.3;
     robot.base_max_vel_x = robot.max_vel_x;
-    robot.base_max_vel_x_backwards = robot.base_max_vel_x_backwards;
-    robot.base_max_vel_y = robot.base_max_vel_y;
-    robot.base_max_vel_theta = robot.base_max_vel_theta;
+    robot.base_max_vel_x_backwards = robot.max_vel_x_backwards;
+    robot.base_max_vel_y = robot.max_vel_y;
+    robot.base_max_vel_theta = robot.max_vel_theta;
     robot.acc_lim_x = 0.5;
     robot.acc_lim_y = 0.5;
     robot.acc_lim_theta = 0.5;
@@ -388,7 +398,7 @@ public:
     recovery.divergence_detection_enable = false;
     recovery.divergence_detection_max_chi_squared = 10;
   }
-  
+
   void declareParameters(const nav2_util::LifecycleNode::SharedPtr, const std::string name);
 
   /**
@@ -396,14 +406,14 @@ public:
    * @param nh const reference to the local rclcpp::Node::SharedPtr
    */
   void loadRosParamFromNodeHandle(const nav2_util::LifecycleNode::SharedPtr nh, const std::string name);
-  
+
   /**
    * @brief Callback executed when a paramter change is detected
    * @param parameters list of changed parameters
    */
   rcl_interfaces::msg::SetParametersResult
     dynamicParametersCallback(std::vector<rclcpp::Parameter> parameters);
-  
+
   /**
    * @brief Check parameters and print warnings in case of discrepancies
    *
@@ -411,19 +421,25 @@ public:
    * about some improper uses.
    */
   void checkParameters() const;
-  
+
   /**
    * @brief Check if some deprecated parameters are found and print warnings
    * @param nh const reference to the local rclcpp::Node::SharedPtr
    */
   void checkDeprecated(const nav2_util::LifecycleNode::SharedPtr nh, const std::string name) const;
-  
+
   /**
    * @brief Return the internal config mutex
    */
   std::mutex& configMutex() {return config_mutex_;}
 
+  // Call while holding configMutex; the active Nav2 cap survives nominal updates.
+  void setSpeedLimit(double speed_limit, bool percentage);
+  void applySpeedLimit();
+
 private:
+  double speed_limit_ = 0.0;
+  bool speed_limit_percentage_ = false;
   std::mutex config_mutex_; //!< Mutex for config accesses and changes
   rclcpp::Logger logger_{rclcpp::get_logger("TEBLocalPlanner")};
 };

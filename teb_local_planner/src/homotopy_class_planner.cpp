@@ -377,7 +377,7 @@ TebOptimalPlannerPtr HomotopyClassPlanner::addAndInitNewTeb(const PoseSE2& start
                                                     candidate->teb().timediffs().begin(), candidate->teb().timediffs().end());
 
   if (free_goal_vel)
-    candidate->setVelocityGoalFree(); 
+    candidate->setVelocityGoalFree();
 
   if(addEquivalenceClassIfNew(H))
   {
@@ -696,8 +696,7 @@ int HomotopyClassPlanner::bestTebIdx() const
   return -1;
 }
 
-bool HomotopyClassPlanner::isTrajectoryFeasible(dwb_critics::ObstacleFootprintCritic* costmap_model, const std::vector<geometry_msgs::msg::Point>& footprint_spec,
-                                                double inscribed_radius, double circumscribed_radius, int look_ahead_idx, double feasibility_check_lookahead_distance)
+bool HomotopyClassPlanner::isTrajectoryFeasible(SweptFootprint& collision, int look_ahead_idx, double feasibility_check_lookahead_distance)
 {
   bool feasible = false;
   while(rclcpp::ok() && !feasible && tebs_.size() > 0)
@@ -708,7 +707,7 @@ bool HomotopyClassPlanner::isTrajectoryFeasible(dwb_critics::ObstacleFootprintCr
       RCLCPP_ERROR(rclcpp::get_logger("teb_local_planner"), "Couldn't retrieve the best plan");
       return false;
     }
-    feasible = best->isTrajectoryFeasible(costmap_model, footprint_spec, inscribed_radius, circumscribed_radius, look_ahead_idx, feasibility_check_lookahead_distance);
+    feasible = best->isTrajectoryFeasible(collision, look_ahead_idx, feasibility_check_lookahead_distance);
     if(!feasible)
     {
       removeTeb(best);

@@ -45,12 +45,15 @@
 
 // Navigation2 local planner base class and utilities
 #include <nav2_core/controller.hpp>
+#include <nav2_core/controller_exceptions.hpp>
 
 // timed-elastic-band related classes
 #include "teb_local_planner/optimal_planner.h"
 #include "teb_local_planner/homotopy_class_planner.h"
 #include "teb_local_planner/visualization.h"
 #include "teb_local_planner/recovery_behaviors.h"
+#include "teb_local_planner/command_continuity.h"
+#include "teb_local_planner/terminal_observation.h"
 
 // message types
 #include <nav_msgs/msg/path.hpp>
@@ -91,6 +94,26 @@ class TebLocalPlannerROS : public nav2_core::Controller
 {
 
 public:
+  void setPersistentGoal(bool enabled) {
+    std::lock_guard<std::mutex> lock(cfg_->configMutex());
+    persistent_goal_ = enabled;
+  }
+  bool setStationEnvelope(const StationEnvelope& envelope);
+  bool setCommandScope(const std::string& request_id, const std::string& route_frame,
+      double reverse_limit, double nominal_horizon, double terminal_yaw_tolerance,
+      bool terminal_yaw_optional);
+  void discardCommand();
+  void commitCommand(geometry_msgs::msg::Twist& command);
+  const geometry_msgs::msg::Twist& unshapedCommand() const { return unshaped_command_; }
+  std::uint64_t commandTimeNSec() const { return command_time_ns_; }
+  const PoseSE2& commandPredictionPose() const { return robot_pose_; }
+  bool isGoalReached();
+  TerminalObservation terminalObservation() const {
+    std::lock_guard<std::mutex> lock(terminal_observation_mutex_);
+    return terminal_observation_;
+  }
+  void setSpeedLimit(const double& speed_limit, const bool& percentage) override;
+
   /**
     * @brief Constructor of the teb plugin
     */
@@ -100,10 +123,10 @@ public:
     * @brief  Destructor of the plugin
     */
   ~TebLocalPlannerROS();
-  
+
   /**
    * @brief Configure the teb plugin
-   * 
+   *
    * @param node The node of the instance
    * @param tf Pointer to a transform listener
    * @param costmap_ros Cost map representing occupied and free space
@@ -139,14 +162,14 @@ public:
     const geometry_msgs::msg::PoseStamped &pose,
     const geometry_msgs::msg::Twist &velocity,
       nav2_core::GoalChecker * goal_checker);
-  
-    
+
+
   /** @name Public utility functions/methods */
   //@{
-  
+
     /**
     * @brief  Transform a tf::Pose type into a Eigen::Vector2d containing the translational and angular velocities.
-    * 
+    *
     * Translational velocities (x- and y-coordinates) are combined into a single translational velocity (first component).
     * @param tf_vel tf::Pose message containing a 1D or 2D translational velocity (x,y) and an angular velocity (yaw-angle)
     * @return Translational and angular velocity combined into an Eigen::Vector2d
@@ -159,32 +182,32 @@ public:
    * @return Robot footprint model used for optimization
    */
   RobotFootprintModelPtr getRobotFootprintFromParamServer(nav2_util::LifecycleNode::SharedPtr node);
-  
-  /** 
+
+  /**
    * @brief Set the footprint from the given XmlRpcValue.
    * @remarks This method is copied from costmap_2d/footprint.h, since it is not declared public in all ros distros
    * @remarks It is modified in order to return a container of Eigen::Vector2d instead of geometry_msgs::msg::Point
    * @param footprint_xmlrpc should be an array of arrays, where the top-level array should have 3 or more elements, and the
    * sub-arrays should all have exactly 2 elements (x and y coordinates).
-   * @param full_param_name this is the full name of the rosparam from which the footprint_xmlrpc value came. 
-   * It is used only for reporting errors. 
+   * @param full_param_name this is the full name of the rosparam from which the footprint_xmlrpc value came.
+   * It is used only for reporting errors.
    * @return container of vertices describing the polygon
    */
 // Using ROS2 parameter server
 //  static Point2dContainer makeFootprintFromXMLRPC(XmlRpc::XmlRpcValue& footprint_xmlrpc, const std::string& full_param_name);
-  
-  /** 
+
+  /**
    * @brief Get a number from the given XmlRpcValue.
    * @remarks This method is copied from costmap_2d/footprint.h, since it is not declared public in all ros distros
    * @remarks It is modified in order to return a container of Eigen::Vector2d instead of geometry_msgs::msg::Point
    * @param value double value type
-   * @param full_param_name this is the full name of the rosparam from which the footprint_xmlrpc value came. 
-   * It is used only for reporting errors. 
+   * @param full_param_name this is the full name of the rosparam from which the footprint_xmlrpc value came.
+   * It is used only for reporting errors.
    * @returns double value
    */
 // Using ROS2 parameter server
 //  static double getNumberFromXMLRPC(XmlRpc::XmlRpcValue& value, const std::string& full_param_name);
-  
+
   //@}
 
 protected:
@@ -198,7 +221,7 @@ protected:
     * @todo Include properties for dynamic obstacles (e.g. using constant velocity model)
     */
   void updateObstacleContainerWithCostmap();
-  
+
   /**
    * @brief Update internal obstacle vector based on polygons provided by a costmap_converter plugin
    * @remarks Requires a loaded costmap_converter plugin.
@@ -206,7 +229,7 @@ protected:
    * @sa updateObstacleContainerWithCostmap
    */
   void updateObstacleContainerWithCostmapConverter();
-  
+
   /**
    * @brief Update internal obstacle vector based on custom messages received via subscriber
    * @remarks All previous obstacles are NOT cleared. Call this method after other update methods.
@@ -222,25 +245,25 @@ protected:
    * @param min_separation minimum separation between two consecutive via-points
    */
   void updateViaPointsContainer(const std::vector<geometry_msgs::msg::PoseStamped>& transformed_plan, double min_separation);
-  
-  
+
+
   /**
     * @brief Callback for the dynamic_reconfigure node.
-    * 
+    *
     * This callback allows to modify parameters dynamically at runtime without restarting the node
     * @param config Reference to the dynamic reconfigure config
     * @param level Dynamic reconfigure level
     */
   // TODO : dynamic reconfigure is not supported on ROS2
 //  void reconfigureCB(TebLocalPlannerReconfigureConfig& config, uint32_t level);
-  
-  
+
+
    /**
-    * @brief Callback for custom obstacles that are not obtained from the costmap 
+    * @brief Callback for custom obstacles that are not obtained from the costmap
     * @param obst_msg pointer to the message containing a list of polygon shaped obstacles
     */
   void customObstacleCB(const costmap_converter_msgs::msg::ObstacleArrayMsg::ConstSharedPtr obst_msg);
-  
+
    /**
     * @brief Callback for custom via-points
     * @param via_points_msg pointer to the message containing a list of via-points
@@ -249,7 +272,7 @@ protected:
 
    /**
     * @brief Prune global plan such that already passed poses are cut off
-    * 
+    *
     * The pose of the robot is transformed into the frame of the global plan by taking the most recent tf transform.
     * If no valid transformation can be found, the method returns \c false.
     * The global plan is pruned until the distance to the robot is at least \c dist_behind_robot.
@@ -263,12 +286,12 @@ protected:
     */
   bool pruneGlobalPlan(const geometry_msgs::msg::PoseStamped& global_pose,
                        std::vector<geometry_msgs::msg::PoseStamped>& global_plan, double dist_behind_robot=1);
-  
+
   /**
     * @brief  Transforms the global plan of the robot from the planner frame to the local frame (modified).
-    * 
-    * The method replaces transformGlobalPlan as defined in base_local_planner/goal_functions.h 
-    * such that the index of the current goal pose is returned as well as 
+    *
+    * The method replaces transformGlobalPlan as defined in base_local_planner/goal_functions.h
+    * such that the index of the current goal pose is returned as well as
     * the transformation between the global plan and the planning frame.
     * @param global_plan The plan to be transformed
     * @param global_pose The global pose of the robot
@@ -284,13 +307,13 @@ protected:
                            const geometry_msgs::msg::PoseStamped& global_pose,  const nav2_costmap_2d::Costmap2D& costmap,
                            const std::string& global_frame, double max_plan_length, std::vector<geometry_msgs::msg::PoseStamped>& transformed_plan,
                            int* current_goal_idx = NULL, geometry_msgs::msg::TransformStamped* tf_plan_to_global = NULL) const;
-    
+
   /**
     * @brief Estimate the orientation of a pose from the global_plan that is treated as a local goal for the local planner.
-    * 
+    *
     * If the current (local) goal point is not the final one (global)
-    * substitute the goal orientation by the angle of the direction vector between 
-    * the local goal and the subsequent pose of the global plan. 
+    * substitute the goal orientation by the angle of the direction vector between
+    * the local goal and the subsequent pose of the global plan.
     * This is often helpful, if the global planner does not consider orientations. \n
     * A moving average filter is utilized to smooth the orientation.
     * @param global_plan The global plan
@@ -302,11 +325,11 @@ protected:
     */
   double estimateLocalGoalOrientation(const std::vector<geometry_msgs::msg::PoseStamped>& global_plan, const geometry_msgs::msg::PoseStamped& local_goal,
                                       int current_goal_idx, const geometry_msgs::msg::TransformStamped& tf_plan_to_global, int moving_average_length=3) const;
-        
-        
+
+
   /**
    * @brief Saturate the translational and angular velocity to given limits.
-   * 
+   *
    * The limit of the translational velocity for backwards driving can be changed independently.
    * Do not choose max_vel_x_backwards <= 0. If no backward driving is desired, change the optimization weight for
    * penalizing backwards driving instead.
@@ -319,12 +342,12 @@ protected:
    * @param max_vel_x_backwards Maximum translational velocity for backwards driving
    */
   void saturateVelocity(double& vx, double& vy, double& omega, double max_vel_x, double max_vel_y,
-                        double max_vel_theta, double max_vel_x_backwards) const;
+                        double max_vel_trans, double max_vel_theta, double max_vel_x_backwards) const;
 
-  
+
   /**
    * @brief Convert translational and rotational velocities to a steering angle of a carlike robot
-   * 
+   *
    * The conversion is based on the following equations:
    * - The turning radius is defined by \f$ R = v/omega \f$
    * - For a car like robot withe a distance L between both axles, the relation is: \f$ tan(\phi) = L/R \f$
@@ -337,10 +360,10 @@ protected:
    * @return Resulting steering angle in [rad] inbetween [-pi/2, pi/2]
    */
   double convertTransRotVelToSteeringAngle(double v, double omega, double wheelbase, double min_turning_radius = 0) const;
-  
+
   /**
    * @brief Validate current parameter values of the footprint for optimization, obstacle distance and the costmap footprint
-   * 
+   *
    * This method prints warnings if validation fails.
    * @remarks Currently, we only validate the inscribed radius of the footprints
    * @param opt_inscribed_radius Inscribed radius of the RobotFootprintModel for optimization
@@ -348,18 +371,9 @@ protected:
    * @param min_obst_dist desired distance to obstacles
    */
   void validateFootprints(double opt_inscribed_radius, double costmap_inscribed_radius, double min_obst_dist);
-  
-  
-  void configureBackupModes(std::vector<geometry_msgs::msg::PoseStamped>& transformed_plan,  int& goal_idx);
-  
-  /**
-   * @brief Limits the maximum linear speed of the robot.
-   * @param speed_limit expressed in absolute value (in m/s)
-   * or in percentage from maximum robot speed.
-   * @param percentage Setting speed limit in percentage if true
-   * or in absolute values in false case.
-   */
-  void setSpeedLimit(const double & speed_limit,  const bool & percentage);
+
+
+  void configureBackupModes(std::vector<geometry_msgs::msg::PoseStamped>& transformed_plan,  int& goal_idx, bool preserve_goal = false);
 
 private:
   // Definition of member variables
@@ -372,19 +386,34 @@ private:
   nav2_costmap_2d::Costmap2D* costmap_; //!< Pointer to the 2d costmap (obtained from the costmap ros wrapper)
   TFBufferPtr tf_; //!< pointer to Transform Listener
   TebConfig::UniquePtr cfg_; //!< Config class that stores and manages all related parameters
-    
+
   // internal objects (memory management owned)
   PlannerInterfacePtr planner_; //!< Instance of the underlying optimal planner class
   ObstContainer obstacles_; //!< Obstacle vector that should be considered during local trajectory optimization
   ViaPointContainer via_points_; //!< Container of via-points that should be considered during local trajectory optimization
   TebVisualizationPtr visualization_; //!< Instance of the visualization class (local/global plan, obstacles, ...)
-  std::shared_ptr<dwb_critics::ObstacleFootprintCritic> costmap_model_;
+  StationEnvelope station_envelope_;
+  CommandContinuity command_continuity_;
+  double command_terminal_yaw_tolerance_ = -1.0;
+  bool command_terminal_yaw_optional_ = false;
+  double command_period_sec_ = 0.0;
+  double command_reverse_limit_ = 0.0;
+  geometry_msgs::msg::Twist unshaped_command_;
+  std::uint64_t command_time_ns_ = 0, command_proposal_ns_ = 0;
+  bool isCommandArcFeasible(const geometry_msgs::msg::Twist& command, SweptFootprint& collision) const;
+  bool computeCommand(const geometry_msgs::msg::PoseStamped& pose,
+      const geometry_msgs::msg::Twist& velocity, geometry_msgs::msg::TwistStamped& output,
+      std::string& reason);
+  bool persistent_goal_ = false, goal_reached_ = false;
+  mutable std::mutex terminal_observation_mutex_;
+  TerminalObservation terminal_observation_;
+  void resetTerminalObservation(bool new_plan);
   FailureDetector failure_detector_; //!< Detect if the robot got stucked
-  
+
   std::vector<geometry_msgs::msg::PoseStamped> global_plan_; //!< Store the current global plan
-  
+
   pluginlib::ClassLoader<costmap_converter::BaseCostmapToPolygons> costmap_converter_loader_; //!< Load costmap converter plugins at runtime
-  std::shared_ptr<costmap_converter::BaseCostmapToPolygons> costmap_converter_; //!< Store the current costmap_converter  
+  std::shared_ptr<costmap_converter::BaseCostmapToPolygons> costmap_converter_; //!< Store the current costmap_converter
 
   //std::shared_ptr< dynamic_reconfigure::Server<TebLocalPlannerReconfigureConfig> > dynamic_recfg_; //!< Dynamic reconfigure server to allow config modifications at runtime
   rclcpp::Subscription<costmap_converter_msgs::msg::ObstacleArrayMsg>::SharedPtr custom_obst_sub_; //!< Subscriber for custom obstacles received via a ObstacleMsg.
@@ -403,11 +432,11 @@ private:
   rclcpp::Time time_last_oscillation_; //!< Store at which time stamp the last oscillation was detected
   RotType last_preferred_rotdir_; //!< Store recent preferred turning direction
   geometry_msgs::msg::Twist last_cmd_; //!< Store the last control command generated in computeVelocityCommands()
-  
-  std::vector<geometry_msgs::msg::Point> footprint_spec_; //!< Store the footprint of the robot 
+
+  std::vector<geometry_msgs::msg::Point> footprint_spec_; //!< Store the footprint of the robot
   double robot_inscribed_radius_; //!< The radius of the inscribed circle of the robot (collision possible)
-  double robot_circumscribed_radius; //!< The radius of the circumscribed circle of the robot
-    
+  double robot_circumscribed_radius_; //!< The radius of the circumscribed circle of the robot
+
   // flags
   bool initialized_; //!< Keeps track about the correct initialization of this class
   std::string name_; //!< Name of plugin ID
@@ -418,9 +447,8 @@ protected:
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
-  
+
 }; // end namespace teb_local_planner
 
 #endif // TEB_LOCAL_PLANNER_ROS_H_
-
 

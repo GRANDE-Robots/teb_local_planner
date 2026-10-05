@@ -140,7 +140,7 @@ void TebConfig::declareParameters(const nav2_util::LifecycleNode::SharedPtr nh, 
   declare_parameter_if_not_declared(nh, name + "." + "selection_cost_hysteresis", rclcpp::ParameterValue(hcp.selection_cost_hysteresis));
   declare_parameter_if_not_declared(nh, name + "." + "selection_alternative_time_cost", rclcpp::ParameterValue(hcp.selection_alternative_time_cost));
   declare_parameter_if_not_declared(nh, name + "." + "switching_blocking_period", rclcpp::ParameterValue(hcp.switching_blocking_period));
-  declare_parameter_if_not_declared(nh, name + "." + "roadmap_graph_samples", rclcpp::ParameterValue(hcp.roadmap_graph_no_samples));
+  declare_parameter_if_not_declared(nh, name + "." + "roadmap_graph_no_samples", rclcpp::ParameterValue(hcp.roadmap_graph_no_samples));
   declare_parameter_if_not_declared(nh, name + "." + "roadmap_graph_area_width", rclcpp::ParameterValue(hcp.roadmap_graph_area_width));
   declare_parameter_if_not_declared(nh, name + "." + "roadmap_graph_area_length_scale", rclcpp::ParameterValue(hcp.roadmap_graph_area_length_scale));
   declare_parameter_if_not_declared(nh, name + "." + "h_signature_prescaler", rclcpp::ParameterValue(hcp.h_signature_prescaler));
@@ -169,12 +169,20 @@ void TebConfig::declareParameters(const nav2_util::LifecycleNode::SharedPtr nh, 
 
   // footprint model
   declare_parameter_if_not_declared(nh, name + "." + "footprint_model.type", rclcpp::ParameterType::PARAMETER_STRING);
+
+  declare_parameter_if_not_declared(nh, name + ".prevent_look_ahead_poses_near_goal", rclcpp::ParameterValue(trajectory.prevent_look_ahead_poses_near_goal));
+  declare_parameter_if_not_declared(nh, name + ".max_vel_trans", rclcpp::ParameterValue(robot.max_vel_trans));
+  declare_parameter_if_not_declared(nh, name + ".xy_goal_tolerance", rclcpp::ParameterValue(goal_tolerance.xy_goal_tolerance));
+  declare_parameter_if_not_declared(nh, name + ".yaw_goal_tolerance", rclcpp::ParameterValue(goal_tolerance.yaw_goal_tolerance));
+  declare_parameter_if_not_declared(nh, name + ".trans_stopped_vel", rclcpp::ParameterValue(goal_tolerance.trans_stopped_vel));
+  declare_parameter_if_not_declared(nh, name + ".theta_stopped_vel", rclcpp::ParameterValue(goal_tolerance.theta_stopped_vel));
+  declare_parameter_if_not_declared(nh, name + ".complete_global_plan", rclcpp::ParameterValue(goal_tolerance.complete_global_plan));
 }
 
 void TebConfig::loadRosParamFromNodeHandle(const nav2_util::LifecycleNode::SharedPtr nh, const std::string name)
 {
   nh->get_parameter_or(name + "." + "odom_topic", odom_topic, odom_topic);
-  
+
   // Trajectory
   nh->get_parameter_or(name + "." + "teb_autosize", trajectory.teb_autosize, trajectory.teb_autosize);
   nh->get_parameter_or(name + "." + "dt_ref", trajectory.dt_ref, trajectory.dt_ref);
@@ -208,7 +216,7 @@ void TebConfig::loadRosParamFromNodeHandle(const nav2_util::LifecycleNode::Share
   nh->get_parameter_or(name + "." + "wheelbase", robot.wheelbase, robot.wheelbase);
   nh->get_parameter_or(name + "." + "cmd_angle_instead_rotvel", robot.cmd_angle_instead_rotvel, robot.cmd_angle_instead_rotvel);
   nh->get_parameter_or(name + "." + "is_footprint_dynamic", robot.is_footprint_dynamic, robot.is_footprint_dynamic);
-  
+
   // GoalTolerance
   nh->get_parameter_or(name + "." + "free_goal_vel", goal_tolerance.free_goal_vel, goal_tolerance.free_goal_vel);
 
@@ -228,7 +236,7 @@ void TebConfig::loadRosParamFromNodeHandle(const nav2_util::LifecycleNode::Share
   nh->get_parameter_or(name + "." + "obstacle_proximity_ratio_max_vel", obstacles.obstacle_proximity_ratio_max_vel, obstacles.obstacle_proximity_ratio_max_vel);
   nh->get_parameter_or(name + "." + "obstacle_proximity_lower_bound", obstacles.obstacle_proximity_lower_bound, obstacles.obstacle_proximity_lower_bound);
   nh->get_parameter_or(name + "." + "obstacle_proximity_upper_bound", obstacles.obstacle_proximity_upper_bound, obstacles.obstacle_proximity_upper_bound);
-  
+
   // Optimization
   nh->get_parameter_or(name + "." + "no_inner_iterations", optim.no_inner_iterations, optim.no_inner_iterations);
   nh->get_parameter_or(name + "." + "no_outer_iterations", optim.no_outer_iterations, optim.no_outer_iterations);
@@ -255,7 +263,7 @@ void TebConfig::loadRosParamFromNodeHandle(const nav2_util::LifecycleNode::Share
   nh->get_parameter_or(name + "." + "weight_adapt_factor", optim.weight_adapt_factor, optim.weight_adapt_factor);
   nh->get_parameter_or(name + "." + "obstacle_cost_exponent", optim.obstacle_cost_exponent, optim.obstacle_cost_exponent);
   nh->get_parameter_or(name + "." + "weight_velocity_obstacle_ratio", optim.weight_velocity_obstacle_ratio, optim.weight_velocity_obstacle_ratio);
-  
+
   // Homotopy Class Planner
   nh->get_parameter_or(name + "." + "enable_homotopy_class_planning", hcp.enable_homotopy_class_planning, hcp.enable_homotopy_class_planning);
   nh->get_parameter_or(name + "." + "enable_multithreading", hcp.enable_multithreading, hcp.enable_multithreading);
@@ -267,7 +275,7 @@ void TebConfig::loadRosParamFromNodeHandle(const nav2_util::LifecycleNode::Share
   nh->get_parameter_or(name + "." + "selection_cost_hysteresis", hcp.selection_cost_hysteresis, hcp.selection_cost_hysteresis);
   nh->get_parameter_or(name + "." + "selection_alternative_time_cost", hcp.selection_alternative_time_cost, hcp.selection_alternative_time_cost);
   nh->get_parameter_or(name + "." + "switching_blocking_period", hcp.switching_blocking_period, hcp.switching_blocking_period);
-  nh->get_parameter_or(name + "." + "roadmap_graph_samples", hcp.roadmap_graph_no_samples, hcp.roadmap_graph_no_samples);
+  nh->get_parameter_or(name + "." + "roadmap_graph_no_samples", hcp.roadmap_graph_no_samples, hcp.roadmap_graph_no_samples);
   nh->get_parameter_or(name + "." + "roadmap_graph_area_width", hcp.roadmap_graph_area_width, hcp.roadmap_graph_area_width);
   nh->get_parameter_or(name + "." + "roadmap_graph_area_length_scale", hcp.roadmap_graph_area_length_scale, hcp.roadmap_graph_area_length_scale);
   nh->get_parameter_or(name + "." + "h_signature_prescaler", hcp.h_signature_prescaler, hcp.h_signature_prescaler);
@@ -430,6 +438,20 @@ void TebConfig::loadRosParamFromNodeHandle(const nav2_util::LifecycleNode::Share
 
   checkParameters();
   checkDeprecated(nh, name);
+
+  nh->get_parameter_or(name + ".prevent_look_ahead_poses_near_goal", trajectory.prevent_look_ahead_poses_near_goal, trajectory.prevent_look_ahead_poses_near_goal);
+  nh->get_parameter_or(name + ".max_vel_trans", robot.max_vel_trans, robot.max_vel_trans);
+  nh->get_parameter_or(name + ".xy_goal_tolerance", goal_tolerance.xy_goal_tolerance, goal_tolerance.xy_goal_tolerance);
+  nh->get_parameter_or(name + ".yaw_goal_tolerance", goal_tolerance.yaw_goal_tolerance, goal_tolerance.yaw_goal_tolerance);
+  nh->get_parameter_or(name + ".trans_stopped_vel", goal_tolerance.trans_stopped_vel, goal_tolerance.trans_stopped_vel);
+  nh->get_parameter_or(name + ".theta_stopped_vel", goal_tolerance.theta_stopped_vel, goal_tolerance.theta_stopped_vel);
+  nh->get_parameter_or(name + ".complete_global_plan", goal_tolerance.complete_global_plan, goal_tolerance.complete_global_plan);
+  if (robot.max_vel_trans == 0.0) robot.max_vel_trans = robot.max_vel_x;
+  robot.base_max_vel_trans = robot.max_vel_trans;
+  robot.base_max_vel_x = robot.max_vel_x;
+  robot.base_max_vel_x_backwards = robot.max_vel_x_backwards;
+  robot.base_max_vel_y = robot.max_vel_y;
+  robot.base_max_vel_theta = robot.max_vel_theta;
 }
 
 rcl_interfaces::msg::SetParametersResult
@@ -439,16 +461,14 @@ rcl_interfaces::msg::SetParametersResult
   std::lock_guard<std::mutex> l(config_mutex_);
 
   bool reload_footprint = false;
-  
+
   for (auto parameter : parameters) {
     const auto & type = parameter.get_type();
     const auto & name = parameter.get_name();
 
     if (type == rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE) {
       // Trajectory
-      if (name == node_name + ".teb_autosize") {
-        trajectory.teb_autosize = parameter.as_double();
-      } else if (name == node_name + ".dt_ref") {
+      if (name == node_name + ".dt_ref") {
         trajectory.dt_ref = parameter.as_double();
       } else if (name == node_name + ".dt_hysteresis") {
         trajectory.dt_hysteresis = parameter.as_double();
@@ -468,7 +488,10 @@ rcl_interfaces::msg::SetParametersResult
         trajectory.feasibility_check_lookahead_distance = parameter.as_double();
       }
       // Robot
-      else if (name == node_name + ".max_vel_x") {
+      else if (name == node_name + ".max_vel_trans") {
+        robot.max_vel_trans = parameter.as_double();
+        robot.base_max_vel_trans = parameter.as_double();
+      } else if (name == node_name + ".max_vel_x") {
         robot.max_vel_x = parameter.as_double();
         robot.base_max_vel_x = parameter.as_double();
       } else if (name == node_name + ".max_vel_x_backwards") {
@@ -492,6 +515,15 @@ rcl_interfaces::msg::SetParametersResult
         robot.wheelbase = parameter.as_double();
       }
       // GoalTolerance
+      else if (name == node_name + ".xy_goal_tolerance") {
+        goal_tolerance.xy_goal_tolerance = parameter.as_double();
+      } else if (name == node_name + ".yaw_goal_tolerance") {
+        goal_tolerance.yaw_goal_tolerance = parameter.as_double();
+      } else if (name == node_name + ".trans_stopped_vel") {
+        goal_tolerance.trans_stopped_vel = parameter.as_double();
+      } else if (name == node_name + ".theta_stopped_vel") {
+        goal_tolerance.theta_stopped_vel = parameter.as_double();
+      }
       // Obstacles
       else if (name == node_name + ".min_obstacle_dist") {
         obstacles.min_obstacle_dist = parameter.as_double();
@@ -633,7 +665,9 @@ rcl_interfaces::msg::SetParametersResult
 
     else if (type == rcl_interfaces::msg::ParameterType::PARAMETER_INTEGER) {
       // Trajectory
-      if (name == node_name + ".min_samples") {
+      if (name == node_name + ".prevent_look_ahead_poses_near_goal") {
+        trajectory.prevent_look_ahead_poses_near_goal = parameter.as_int();
+      } else if (name == node_name + ".min_samples") {
         trajectory.min_samples = parameter.as_int();
       } else if (name == node_name + ".max_samples") {
         trajectory.max_samples = parameter.as_int();
@@ -667,7 +701,9 @@ rcl_interfaces::msg::SetParametersResult
 
     else if (type == rcl_interfaces::msg::ParameterType::PARAMETER_BOOL) {
       // Trajectory
-      if (name == node_name + ".global_plan_overwrite_orientation") {
+      if (name == node_name + ".teb_autosize") {
+        trajectory.teb_autosize = parameter.as_bool();
+      } else if (name == node_name + ".global_plan_overwrite_orientation") {
         trajectory.global_plan_overwrite_orientation = parameter.as_bool();
       } else if (name == node_name + ".allow_init_with_backwards_motion") {
         trajectory.allow_init_with_backwards_motion = parameter.as_bool();
@@ -685,7 +721,9 @@ rcl_interfaces::msg::SetParametersResult
         robot.is_footprint_dynamic = parameter.as_bool();
       }
       // GoalTolerance
-      else if (name == node_name + ".free_goal_vel") {
+      else if (name == node_name + ".complete_global_plan") {
+        goal_tolerance.complete_global_plan = parameter.as_bool();
+      } else if (name == node_name + ".free_goal_vel") {
         goal_tolerance.free_goal_vel = parameter.as_bool();
       }
       // Obstacles
@@ -797,67 +835,90 @@ rcl_interfaces::msg::SetParametersResult
       }
     }
   }
+  applySpeedLimit();
   result.successful = true;
   return result;
 }
-    
-    
+
+void TebConfig::setSpeedLimit(double speed_limit, bool percentage)
+{
+  speed_limit_ = speed_limit;
+  speed_limit_percentage_ = percentage;
+  applySpeedLimit();
+}
+
+void TebConfig::applySpeedLimit()
+{
+  const double factor = speed_limit_ == 0.0 ? 1.0 :
+      (speed_limit_percentage_ ? std::min(1.0, speed_limit_ / 100.0) :
+       std::min(1.0, speed_limit_ / std::max({1e-9, robot.base_max_vel_x,
+           robot.base_max_vel_x_backwards, robot.base_max_vel_y})));
+  robot.max_vel_x = robot.base_max_vel_x * factor;
+  robot.max_vel_x_backwards = robot.base_max_vel_x_backwards * factor;
+  robot.max_vel_y = robot.base_max_vel_y * factor;
+  robot.max_vel_theta = robot.base_max_vel_theta * factor;
+  robot.max_vel_trans = robot.base_max_vel_trans * factor;
+  if (speed_limit_ != 0.0 && !speed_limit_percentage_)
+    robot.max_vel_trans = std::min(robot.max_vel_trans, speed_limit_);
+}
+
+
 void TebConfig::checkParameters() const
 {
   //rclcpp::Logger logger_{rclcpp::get_logger("TEBLocalPlanner")};
   // positive backward velocity?
   if (robot.max_vel_x_backwards <= 0)
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: Do not choose max_vel_x_backwards to be <=0. Disable backwards driving by increasing the optimization weight for penalyzing backwards driving.");
-  
+
   // bounds smaller than penalty epsilon
   if (robot.max_vel_x <= optim.penalty_epsilon)
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: max_vel_x <= penalty_epsilon. The resulting bound is negative. Undefined behavior... Change at least one of them!");
-  
+
   if (robot.max_vel_x_backwards <= optim.penalty_epsilon)
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: max_vel_x_backwards <= penalty_epsilon. The resulting bound is negative. Undefined behavior... Change at least one of them!");
-  
+
   if (robot.max_vel_theta <= optim.penalty_epsilon)
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: max_vel_theta <= penalty_epsilon. The resulting bound is negative. Undefined behavior... Change at least one of them!");
-  
+
   if (robot.acc_lim_x <= optim.penalty_epsilon)
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: acc_lim_x <= penalty_epsilon. The resulting bound is negative. Undefined behavior... Change at least one of them!");
-  
+
   if (robot.acc_lim_theta <= optim.penalty_epsilon)
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: acc_lim_theta <= penalty_epsilon. The resulting bound is negative. Undefined behavior... Change at least one of them!");
-      
+
   // dt_ref and dt_hyst
   if (trajectory.dt_ref <= trajectory.dt_hysteresis)
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: dt_ref <= dt_hysteresis. The hysteresis is not allowed to be greater or equal!. Undefined behavior... Change at least one of them!");
-    
+
   // min number of samples
   if (trajectory.min_samples <3)
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: parameter min_samples is smaller than 3! Sorry, I haven't enough degrees of freedom to plan a trajectory for you. Please increase ...");
-  
+
   // costmap obstacle behind robot
   if (obstacles.costmap_obstacles_behind_robot_dist < 0)
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: parameter 'costmap_obstacles_behind_robot_dist' should be positive or zero.");
-    
+
   // hcp: obstacle heading threshold
   if (hcp.obstacle_keypoint_offset>=1 || hcp.obstacle_keypoint_offset<=0)
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: parameter obstacle_heading_threshold must be in the interval ]0,1[. 0=0deg opening angle, 1=90deg opening angle.");
-  
+
   // carlike
   if (robot.cmd_angle_instead_rotvel && robot.wheelbase==0)
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: parameter cmd_angle_instead_rotvel is non-zero but wheelbase is set to zero: undesired behavior.");
-  
+
   if (robot.cmd_angle_instead_rotvel && robot.min_turning_radius==0)
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: parameter cmd_angle_instead_rotvel is non-zero but min_turning_radius is set to zero: undesired behavior. You are mixing a carlike and a diffdrive robot");
-  
+
   // positive weight_adapt_factor
   if (optim.weight_adapt_factor < 1.0)
       RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: parameter weight_adapt_factor shoud be >= 1.0");
-  
+
   if (recovery.oscillation_filter_duration < 0)
       RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: parameter oscillation_filter_duration must be >= 0");
-  
+
   if (optim.weight_optimaltime <= 0)
       RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: parameter weight_optimaltime shoud be > 0 (even if weight_shortest_path is in use)");
-}    
+}
 
 void TebConfig::checkDeprecated(const nav2_util::LifecycleNode::SharedPtr nh, const std::string name) const
 {
@@ -865,16 +926,16 @@ void TebConfig::checkDeprecated(const nav2_util::LifecycleNode::SharedPtr nh, co
 
   if (nh->get_parameter(name + "." + "line_obstacle_poses_affected", dummy) || nh->get_parameter(name + "." + "polygon_obstacle_poses_affected", dummy))
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: 'line_obstacle_poses_affected' and 'polygon_obstacle_poses_affected' are deprecated. They share now the common parameter 'obstacle_poses_affected'.");
-  
+
   if (nh->get_parameter(name + "." + "weight_point_obstacle", dummy) || nh->get_parameter(name + "." + "weight_line_obstacle", dummy) || nh->get_parameter(name + "." + "weight_poly_obstacle", dummy))
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: 'weight_point_obstacle', 'weight_line_obstacle' and 'weight_poly_obstacle' are deprecated. They are replaced by the single param 'weight_obstacle'.");
-  
+
   if (nh->get_parameter(name + "." + "costmap_obstacles_front_only", dummy))
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: 'costmap_obstacles_front_only' is deprecated. It is replaced by 'costmap_obstacles_behind_robot_dist' to define the actual area taken into account.");
-  
+
   if (nh->get_parameter(name + "." + "costmap_emergency_stop_dist", dummy))
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: 'costmap_emergency_stop_dist' is deprecated. You can safely remove it from your parameter config.");
-  
+
   if (nh->get_parameter(name + "." + "alternative_time_cost", dummy))
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: 'alternative_time_cost' is deprecated. It has been replaced by 'selection_alternative_time_cost'.");
 
@@ -882,5 +943,5 @@ void TebConfig::checkDeprecated(const nav2_util::LifecycleNode::SharedPtr nh, co
     RCLCPP_WARN(logger_, "TebLocalPlannerROS() Param Warning: 'global_plan_via_point_sep' is deprecated. It has been replaced by 'global_plan_viapoint_sep' due to consistency reasons.");
 }
 
-    
+
 } // namespace teb_local_planner
