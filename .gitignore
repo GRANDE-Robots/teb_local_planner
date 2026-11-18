@@ -1,3 +1,43 @@
+# Local environment and editor state
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+/.venv/
+/venv/
+/env/
+/ENV/
+.pypirc
+
+# Python caches and packaging
+__pycache__/
+*.py[cod]
+*.egg-info/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+/dist/
+/wheels/
+
+# Local workspace outputs
+/.catkin_tools/
+/build/
+/devel/
+/install/
+/log/
+/logs/
+/outputs/
+
+# Repository-specific exclusions
 .svn
 .kdev4
 *.kdev4

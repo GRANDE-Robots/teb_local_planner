@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+*.bag binary
+*.db binary
+*.db3 binary
+*.gif binary
+*.jpeg binary
+*.jpg binary
+*.mcap binary
+*.onnx binary
+*.pdf binary
+*.png binary
+*.pt binary
+*.pth binary
